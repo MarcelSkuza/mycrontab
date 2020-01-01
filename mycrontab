@@ -1,0 +1,264 @@
+#!/bin/bash
+
+###THIS FUNCTION CHECKS IF CRONTAB EXISTS/IS EMPTY###
+check_crontab(){
+  if [ $(crontab -l | wc -c) -eq 0 ];
+  then
+    echo "" | crontab -
+  fi
+}
+
+check_crontab
+
+#Create array mapping Job ID -> Line nr in crontab file
+declare -A JOB_HASHMAP
+#Delcare array maping Job ID -> Command
+declare -A COMMAND_HASHMAP
+
+###THIS FUNCTION DISPLAYS JOBS AS A NUMBERED LIST###
+display_job(){
+
+  #Write crontab into temporary file
+  crontab -l > temp.txt
+
+  JOB_COUNTER=1
+  LINE_COUNTER=1
+  
+  #Loop through temporary file
+  while IFS= read -r LINE
+  do
+    #Check if line contains a job	  
+    if [[ ! "$LINE" =~ ^[[:space:]]*# ]] && [[ ! "$LINE" =~ ^$ ]] 
+    then
+      #Split job into periodicity and command
+      PERIODICITY=$(echo -e "$LINE" | grep -P -o "([*,\d]*\s){5}") 
+      COMMAND=${LINE:${#PERIODICITY}}
+      #Update global associative arrays
+      JOB_HASHMAP[$JOB_COUNTER]=$LINE_COUNTER 
+      COMMAND_HASHMAP[$JOB_COUNTER]=$COMMAND
+
+      #Split periodicity into substrings and store them in an array
+      declare PERIODICITY_ARRAY
+      IFS=' ' read -r -a PERIODICITY_ARRAY <<< "$PERIODICITY" 
+      
+      #Display the job
+      echo -e "JOB ID: $JOB_COUNTER"
+      echo -e "      
+      Command: "$COMMAND"
+      Minute: "${PERIODICITY_ARRAY[0]}"
+      Hour: "${PERIODICITY_ARRAY[1]}"
+      Day of month: "${PERIODICITY_ARRAY[2]}"
+      Month: "${PERIODICITY_ARRAY[3]}"
+      Day of week: "${PERIODICITY_ARRAY[4]}"
+      "
+      JOB_COUNTER=$((JOB_COUNTER+1)) 
+    fi
+    LINE_COUNTER=$((LINE_COUNTER+1))
+  done < "temp.txt"    
+  
+  #Remove temporary file
+  rm temp.txt
+  
+  #Check if any jobs exist
+  if [ "${#JOB_HASHMAP[@]}" -eq 0 ]
+  then
+    echo "No jobs found."
+  fi
+
+}
+
+
+###THIS FUNCTION EDITS PERIODICITY OF SPECIFIC JOB BASED ON ID NUMBER###
+edit_job(){
+
+  display_job
+
+  #Edit job by ID if exists 
+  if [ "${#JOB_HASHMAP[@]}" -eq 0 ]
+  then
+    #No jobs to edit
+    :    
+  else
+    read -r -p "Enter ID of job you want to edit: " JOB_TO_EDIT
+    while [[ $JOB_TO_EDIT > ${#JOB_HASHMAP[@]} || $JOB_TO_EDIT < 0 ]]
+    do
+      read -r -p "!ERROR - INVALID JOB ID! Enter ID of job you want to edit: " JOB_TO_EDIT
+    done
+    insert_job_helper "${COMMAND_HASHMAP[$JOB_TO_EDIT]}"
+    remove_job "$JOB_TO_EDIT"
+  fi
+  
+}
+
+###THIS FUNCTION APPENDS JOB TO CRONTAB FILE###
+insert_job(){
+  
+  #Escape '\' if there are any
+  COMMAND=$(printf '%q' "$2" | sed -e 's:\:\\:g:')
+  #Append job to crontab file
+  (crontab -l ; echo "$1 $COMMAND") | crontab -
+
+}
+
+insert_job_helper(){
+
+  #Prompt user for periodicity and validate the input using regex
+  echo -e "Select the periodicity.\n\nInsert the minutes(0-59):"
+  read -r PER_MINS
+  while [[ ! "$PER_MINS" =~ ^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9]))$ ]]
+  do
+    read -r -p "!ERROR - INVALID INPUT! Insert the minutes(0-59):" PER_MINS
+  done
+ 
+  echo -e "Insert the hours(0-23):" 
+  read -r PER_HRS
+  while [[ ! "$PER_HRS" =~ ^(\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3]))$ ]]
+  do
+    read -r -p "!ERROR - INVALID INPUT! Insert the hours(0-23):" PER_HRS
+  done
+
+  echo -e "Insert the day(0-31):"
+  read -r PER_DAY
+  while [[ ! "$PER_DAY" =~ ^(\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1]))$ ]]
+  do
+    read -r -p "!ERROR - INVALID INPUT! Insert the day(0-31):" PER_DAY
+  done
+
+  echo -e "Insert the month(0-12):"
+  read -r PER_MTH
+  while [[ ! "$PER_MTH" =~ ^(\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2]))$ ]]
+  do
+    read -r -p "!ERROR - INVALID INPUT! Insert the month(0-12):" PER_MTH
+  done
+
+  echo -e "Insert the day of the week(0-6) where '0 to 6' are Sunday to Saturday:"
+  read -r PER_DOW
+  while [[ ! "$PER_DOW" =~ ^(\*|([0-6])|\*\/([0-6]))$ ]]
+  do
+    read -r -p "!ERROR - INVALID INPUT! Insert the day of the week(0-6) where '0 to 6' are Sunday to Saturday: " PER_DOW
+  done
+ 
+  #Concatinate periodicity into single string
+  PERIODICITY="${PER_MINS} ${PER_HRS} ${PER_DAY} ${PER_MTH} ${PER_DOW}"
+
+  #Check if function was called from edit_job() or from menu() and prompt user for a command if neccessary
+  if [[ -n "$1" ]]
+  then
+    insert_job "$PERIODICITY" "$1"
+  else
+    echo -e "\nInsert command you want to shedule:"
+    read -r COMMAND
+    insert_job "$PERIODICITY" "$COMMAND"
+  fi
+
+}
+
+###THIS FUNCTION REMOVES SPECIFIC JOB FROM CRONTAB FILE###
+remove_job(){
+  
+  #Remove job by line in crontab file
+  crontab -l | sed -e "${JOB_HASHMAP[$1]}d" | crontab -
+  #Remove values associated with the job from global arrays
+  unset JOB_HASHMAP[$1]
+  unset COMMAND_HASHMAP[$1]
+  check_crontab
+}
+
+###THIS FUNCTION REMOVES EVERYTHING APART FROM COMMENTS FROM CRONTAB FILE###
+remove_all_jobs(){
+  
+  #Remove all lines that arent comments from crontab file
+  crontab -l | grep "#" | crontab -
+  #Remove all values from global arrays
+  unset JOB_HASHMAP
+  unset COMMAND_HASHMAP
+  check_crontab
+
+}
+
+###THIS IS MAIN FUNCTION FOR POSSIBLE FUTURE EXTENSIONS###
+main(){
+
+  menu
+
+}
+
+###THIS FUNCTION DISPLAYS MENU IN COMMAND LINE###
+display_menu(){
+
+  echo "
+  1. Display crontab jobs
+  2. Insert a job
+  3. Edit a job
+  4. Remove a job
+  5. Remove all jobs
+  9. Exit
+  "
+
+}
+
+###THIS FUNCTION CALLS OTHER FUNCTIONS DEPENDING ON USER INPUT###
+menu(){
+	
+  USER_INPUT=0
+  echo "--WELCOME TO CRONTAB MENU--"
+  
+  #Display main menu, ask for input and call appropriate functions
+  while [[ $USER_INPUT -ne 9 ]]
+  do
+    display_menu
+    read -p "Please select one of the options above:" USER_INPUT
+    echo -e "\n-----------------------------\n"
+
+    case $USER_INPUT in 
+    1) 
+      display_job;;
+    2)
+      echo -e "You've selected the option: Insert a job"
+      echo -e "You can use '*' for any of the parameters, it will include all possibilites for it!\n"
+      insert_job_helper
+      ;;	
+    3)
+      edit_job;;
+    4)
+      display_job
+
+      #Check if any jobs exist
+      if [ "${#JOB_HASHMAP[@]}" -eq 0 ]
+      then
+        #No jobs found
+ 	:
+      else
+	echo "Enter the Job ID of the job you wish to remove: "
+	read -r JOB_TO_REMOVE
+	while [[ $JOB_TO_REMOVE > ${#JOB_HASHMAP[@]} || $JOB_TO_REMOVE < 0 ]]
+        do 
+          read -r -p "!ERROR - INVALID JOB ID! Enter ID of job you wish to remove: " JOB_TO_REMOVE
+        done
+      remove_job "$JOB_TO_REMOVE"
+      fi
+      ;;	  
+    5)	
+      #Check if any jobs exist
+      if [ "${#JOB_HASHMAP[@]}" -eq 0 ]
+      then
+        echo "No jobs found."
+      else
+	remove_all_jobs
+      fi
+      ;;
+    9)
+      break;;
+    *)
+      echo "ERROR: Please select a number between 1 AND 5, use 9 to quit."
+      USER_INPUT=0
+    esac
+      
+    echo -e "\n-----------------------------"
+  done	
+
+}
+
+#Call the main function
+main
+

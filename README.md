@@ -1,6 +1,6 @@
 # Mycrontab
 
-Mycrontab is a bash script for crontab file editing/management compatible with most Linux distributions.
+Bash script for crontab file editing/management compatible with most Linux distributions.
 
 ## Usage
 

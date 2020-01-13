@@ -12,7 +12,7 @@ check_crontab
 
 #Create array mapping Job ID -> Line nr in crontab file
 declare -A JOB_HASHMAP
-#Delcare array maping Job ID -> Command
+#Delcare array mapping Job ID -> Command
 declare -A COMMAND_HASHMAP
 
 ###THIS FUNCTION DISPLAYS JOBS AS A NUMBERED LIST###

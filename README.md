@@ -4,7 +4,7 @@ Bash script for crontab file editing/management compatible with most Linux distr
 
 ## Usage
 
-Interaction:\
+**Interaction:**\
 1 - Display crontab jobs\
 2 - Insert a job\
 3 - Edit a job\

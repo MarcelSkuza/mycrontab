@@ -14,4 +14,4 @@ Bash script for crontab file editing/management compatible with most Linux distr
 
 ## To do
 
-Allow insertion of special cases of periodicity (starting with "@").
+1. Allow insertion of special cases of periodicity (starting with "@").
